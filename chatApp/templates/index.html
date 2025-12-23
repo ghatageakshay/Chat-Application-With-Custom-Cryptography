@@ -1,0 +1,243 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Secure Chat 💬</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0b101a;
+      color: #f7f9fc;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at top, rgba(0, 98, 255, 0.25), transparent 50%),
+                  linear-gradient(140deg, #0b101a 20%, #04070d 100%);
+    }
+
+    #chat-shell {
+      width: min(420px, 92vw);
+      display: flex;
+      flex-direction: column;
+      background: rgba(12, 18, 30, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 18px;
+      box-shadow:
+        0 20px 45px rgba(11, 18, 30, 0.55),
+        0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+      overflow: hidden;
+      backdrop-filter: blur(18px);
+    }
+
+    header {
+      padding: 18px 20px;
+      background: linear-gradient(135deg, rgba(0, 98, 255, 0.45), rgba(0, 186, 255, 0.22));
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    header span {
+      font-size: 0.8rem;
+      opacity: 0.75;
+    }
+
+    #messages {
+      padding: 18px 16px 12px;
+      height: 420px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: linear-gradient(180deg, rgba(4, 9, 18, 0.4), rgba(4, 9, 18, 0.65));
+    }
+
+    .msg {
+      max-width: 70%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 0.94rem;
+      line-height: 1.35;
+      letter-spacing: 0.01em;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.22);
+      word-break: break-word;
+      position: relative;
+      animation: pop-in 180ms ease-out;
+    }
+
+    .msg.incoming {
+      margin-right: auto;
+      background: rgba(24, 29, 41, 0.92);
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg.outgoing {
+      margin-left: auto;
+      background: linear-gradient(135deg, #0062ff, #00baff);
+      color: #f9fcff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .timestamp {
+      display: block;
+      margin-top: 6px;
+      font-size: 0.72rem;
+      opacity: 0.65;
+      text-align: right;
+    }
+
+    #composer {
+      display: flex;
+      gap: 10px;
+      padding: 14px 16px;
+      background: rgba(6, 10, 18, 0.85);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    #msg {
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(12, 18, 30, 0.9);
+      color: inherit;
+      font-size: 0.95rem;
+      transition: border 160ms ease;
+    }
+
+    #msg:focus {
+      outline: none;
+      border-color: rgba(0, 134, 255, 0.75);
+      box-shadow: 0 0 0 3px rgba(0, 134, 255, 0.15);
+    }
+
+    button {
+      padding: 0 24px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #0062ff, #00baff);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button:hover {
+      box-shadow: 0 12px 22px rgba(0, 98, 255, 0.35);
+    }
+
+    @keyframes pop-in {
+      from {
+        opacity: 0;
+        transform: translateY(18px) scale(0.98);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-shell">
+    <header>
+      <h1>Secure Chat</h1>
+      <span>End-to-end encrypted</span>
+    </header>
+    <div id="messages"></div>
+    <div id="composer">
+      <input id="msg" placeholder="Type a message…" autocomplete="off">
+      <button id="send-btn" type="button">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    const clientId = crypto.randomUUID();
+
+    document.getElementById('send-btn').addEventListener('click', sendMessage);
+    document.getElementById('msg').addEventListener('keydown', function (evt) {
+      if (evt.key === 'Enter' && !evt.shiftKey) {
+        evt.preventDefault();
+        sendMessage();
+      }
+    });
+
+    socket.on('receive_message', function(data) {
+      const div = document.createElement('div');
+      div.className = "msg";
+      const message =
+        typeof data === 'string'
+          ? data
+          : (data.plaintext || '');
+      div.textContent = message;
+
+      if (data && data.encrypted) {
+        div.setAttribute('data-encrypted', data.encrypted);
+      }
+
+      if (data && data.clientId) {
+        div.classList.add(data.clientId === clientId ? 'outgoing' : 'incoming');
+      } else {
+        div.classList.add('incoming');
+      }
+
+      const time = document.createElement('span');
+      time.className = 'timestamp';
+      time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      div.appendChild(time);
+
+      document.getElementById('messages').appendChild(div);
+      document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+    });
+
+    function sendMessage() {
+      const msg = document.getElementById('msg').value;
+      const trimmed = msg.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      socket.send({
+        text: trimmed,
+        clientId: clientId
+      });
+      document.getElementById('msg').value = '';
+    }
+  </script>
+</body>
+</html>
